@@ -180,6 +180,23 @@ struct KaraokeLineView: View {
     }
 }
 
+@available(iOS 15.0, *)
+extension KaraokeLineView: Equatable {
+    /// Everything that can change how a line looks. Playback position only
+    /// matters to the active line (and to a line whose own syllables are
+    /// still in progress because they overlap the next line — rare, and
+    /// they snap to their final state instead).
+    static func == (lhs: KaraokeLineView, rhs: KaraokeLineView) -> Bool {
+        lhs.lineIndex == rhs.lineIndex
+            && lhs.lineState == rhs.lineState
+            && lhs.distanceFromActive == rhs.distanceFromActive
+            && lhs.availableWidth == rhs.availableWidth
+            && lhs.alignment == rhs.alignment
+            && lhs.animator === rhs.animator
+            && (lhs.lineState != .active || lhs.currentMs == rhs.currentMs)
+    }
+}
+
 private extension SwiftUI.HorizontalAlignment {
     init(karaokeTextAlignment: KaraokeTextAlignment) {
         switch karaokeTextAlignment {

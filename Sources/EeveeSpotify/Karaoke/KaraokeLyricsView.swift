@@ -58,7 +58,7 @@ struct KaraokeLyricsView: View {
         // .animation = every display frame (60/120Hz), which the springs
         // need: they're stepped with the real frame delta, like the
         // extension's requestAnimationFrame loop.
-        TimelineView(.animation) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
             // Reading the tracker here, inside the TimelineView's per-tick
             // closure, is what actually drives the animation — TimelineView
             // re-invokes this closure on its schedule, and since this read
@@ -159,7 +159,21 @@ private struct KaraokeScrollingLines: View {
                             availableWidth: max(0, screenWidth - horizontalPadding * 2),
                             alignment: alignment(for: line)
                         )
+                        // Only the active line changes frame to frame; the
+                        // rest compare equal and skip re-rendering. Redrawing
+                        // every blurred line each frame was what starved the
+                        // main thread (choppy line transitions, and Spotify's
+                        // own UI lagging behind while the overlay was up).
+                        .equatable()
                         .id(index)
+                        // Tap a line to jump to it, like the extension:
+                        // seeks to the line's first sung syllable.
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            guard !line.isInterlude else { return }
+                            let target = (line.syllables.first ?? line.background.first)?.startMs ?? line.startMs
+                            KaraokePlaybackTracker.shared.seek(toMs: target)
+                        }
                         .padding(.horizontal, horizontalPadding)
                         // Counter-flip each row — see the note on the outer
                         // ScrollView's own flip below for why this needs to
