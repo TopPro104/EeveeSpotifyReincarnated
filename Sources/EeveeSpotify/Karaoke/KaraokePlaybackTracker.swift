@@ -73,14 +73,21 @@ final class KaraokePlaybackTracker {
             ? String(uriString.dropFirst("spotify:track:".count))
             : nil
 
-        let positionRaw: Double = (safeValue("position") as? NSNumber)?.doubleValue ?? lastPosition
+        // Same unit handling as SponsorBlockSkipper.normalizeSeconds: the
+        // player state can report position/duration in milliseconds, and
+        // reading that as seconds put currentPositionMs() 1000x ahead —
+        // every syllable instantly "sung", no progressive fill at all.
+        let durationRaw: Double = (safeValue("duration") as? NSNumber)?.doubleValue ?? 0
+        let positionRaw: Double = (safeValue("position") as? NSNumber).map {
+            Self.normalizeSeconds($0.doubleValue, durationHint: durationRaw)
+        } ?? lastPosition
         let playbackSpeed: Double = (safeValue("playbackSpeed") as? NSNumber)?.doubleValue ?? lastPlaybackSpeed
         let isPlaying: Bool = (safeValue("isPlaying") as? Bool) ?? lastIsPlaying
 
         queue.async {
             self.lastPosition = positionRaw
             self.lastPositionStamp = self.uptimeSec()
-            self.lastPlaybackSpeed = playbackSpeed
+            self.lastPlaybackSpeed = playbackSpeed > 0 ? playbackSpeed : 1.0
             self.lastIsPlaying = isPlaying
             if let trackId = trackId, !trackId.isEmpty {
                 self.lastTrackId = trackId
@@ -142,6 +149,11 @@ final class KaraokePlaybackTracker {
 
     func isPlaying() -> Bool {
         queue.sync { lastIsPlaying }
+    }
+
+    private static func normalizeSeconds(_ raw: Double, durationHint: Double) -> Double {
+        if raw > 10_000 || durationHint > 10_000 { return raw / 1000.0 }
+        return raw
     }
 
     private func uptimeSec() -> TimeInterval {

@@ -112,6 +112,18 @@ private struct KaraokeScrollingLines: View {
         }
     }
 
+    /// Duet songs (any OppositeAligned line) switch to Spicy Lyrics' duet
+    /// layout: lead vocalist on one side, the other vocalist on the
+    /// opposite side. Centered text has no "opposite" side, so centered
+    /// duets fall back to left/right like the real extension's
+    /// HasDuetLines styling.
+    private func alignment(for line: KaraokeLineDto) -> KaraokeTextAlignment {
+        guard lyrics.lines.contains(where: \.oppositeAligned) else { return options.textAlignment }
+        let leadAlignment: KaraokeTextAlignment = options.textAlignment == .trailing ? .trailing : .leading
+        guard line.oppositeAligned else { return leadAlignment }
+        return leadAlignment == .leading ? .trailing : .leading
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(showsIndicators: false) {
@@ -123,7 +135,8 @@ private struct KaraokeScrollingLines: View {
                             line: line,
                             currentMs: currentMs,
                             isActiveLine: index == activeLineIndex,
-                            availableWidth: max(0, screenWidth - horizontalPadding * 2)
+                            availableWidth: max(0, screenWidth - horizontalPadding * 2),
+                            alignment: alignment(for: line)
                         )
                         .id(index)
                         .padding(.horizontal, horizontalPadding)

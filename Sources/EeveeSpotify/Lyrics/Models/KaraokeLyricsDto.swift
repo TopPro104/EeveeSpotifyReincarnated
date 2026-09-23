@@ -35,6 +35,19 @@ struct KaraokeLineDto {
     var syllables: [KaraokeSyllableDto]
     var startMs: Int
     var endMs: Int
+    /// Background vocals (SpicyLyrics' `Background` array — ad-libs,
+    /// echoes, backing lines), each group with its own per-syllable timing.
+    /// Rendered smaller underneath the lead syllables, like the real
+    /// extension's Syllable.ts does. A line can have background vocals and
+    /// no lead syllables at all.
+    var background: [KaraokeSyllableDto] = []
+    /// SpicyLyrics' `OppositeAligned` duet flag — this line is sung by the
+    /// second vocalist and sits on the opposite side from the lead lines.
+    var oppositeAligned: Bool = false
+    /// Synthesized "• • •" line covering an instrumental gap, matching the
+    /// real extension's musical-line dots (Syllable.ts). Its `syllables`
+    /// are the three dots, each timed to one third of the gap.
+    var isInterlude: Bool = false
 
     /// Flattened text. A space is inserted before a syllable unless the
     /// *previous* syllable's isPartOfWord flag says it glues forward onto

@@ -288,72 +288,62 @@ class SpicyLyricsRepository: LyricsRepository {
         var hasRomanized = root["HasTransliterations"]?.boolValue ?? false
 
         for entry in content {
-            guard entry["Type"]?.stringValue == "Vocal",
-                  let lead = entry["Lead"] else { continue }
+            guard entry["Type"]?.stringValue == "Vocal" else { continue }
+            let lead = entry["Lead"]
+
+            let karaokeSyllables = SpicyLyricsRepository.karaokeSyllables(from: lead?["Syllables"]?.arrayValue ?? [])
+
+            // Background vocals — one or more groups, each with its own
+            // syllable timing. Groups are joined in order; the view renders
+            // them as one smaller row under the lead, same as Syllable.ts.
+            var backgroundSyllables = [KaraokeSyllableDto]()
+            for group in entry["Background"]?.arrayValue ?? [] {
+                let groupSyllables = SpicyLyricsRepository.karaokeSyllables(from: group["Syllables"]?.arrayValue ?? [])
+                guard !groupSyllables.isEmpty else { continue }
+                if var last = backgroundSyllables.popLast() {
+                    last.isPartOfWord = false
+                    backgroundSyllables.append(last)
+                }
+                backgroundSyllables.append(contentsOf: groupSyllables)
+            }
 
             let lineText: String
-            var karaokeSyllables = [KaraokeSyllableDto]()
-
-            if let syllables = lead["Syllables"]?.arrayValue, !syllables.isEmpty {
-                // Real client rule (Syllable.ts / tools.ts): IsPartOfWord is a
-                // FORWARD-looking flag — a syllable with IsPartOfWord=true means
-                // the word continues into the *next* syllable with no gap (e.g.
-                // "Lo" (IsPartOfWord=true) + "la" -> "Lola"). So whether a space
-                // goes before the *current* syllable depends on the *previous*
-                // syllable's flag, not this one's own. (Verified directly against
-                // the real client: Syllable.ts's word-grouping gates inclusion on
-                // `lead.IsPartOfWord || (prev?.IsPartOfWord && currentWordGroup)`,
-                // and tools.ts's convertSyllableToStatic appends a space *after*
-                // a syllable only `if (!syllable.IsPartOfWord)`.) Reading this
-                // backwards (checking the current syllable's own flag to decide
-                // the preceding space, as an earlier version of this file did)
-                // is what produced broken spacing like "wasLo la" instead of
-                // "was Lola" — plain .joined() (no separator) had the same
-                // underlying problem, producing "Doyourecall,notlongago?".
-                var text = ""
-                var previousIsPartOfWord = false
-                for syllable in syllables {
-                    guard let syllableText = syllable["Text"]?.stringValue else { continue }
-                    let isPartOfWord = syllable["IsPartOfWord"]?.boolValue ?? false
-                    if !text.isEmpty && !previousIsPartOfWord {
-                        text += " "
-                    }
-                    text += syllableText
-                    previousIsPartOfWord = isPartOfWord
-
-                    let startMs = syllable["StartTime"]?.doubleValue.map { Int($0 * 1000) } ?? 0
-                    let endMs   = syllable["EndTime"]?.doubleValue.map { Int($0 * 1000) } ?? startMs
-                    karaokeSyllables.append(KaraokeSyllableDto(
-                        text: syllableText,
-                        startMs: startMs,
-                        endMs: endMs,
-                        isPartOfWord: isPartOfWord
-                    ))
-                }
+            if !karaokeSyllables.isEmpty {
+                lineText = SpicyLyricsRepository.flattenedText(karaokeSyllables)
+            } else if let text = lead?["Text"]?.stringValue, !text.isEmpty {
                 lineText = text
-                if syllables.contains(where: { ($0["TransliteratedText"]?.stringValue ?? "").isEmpty == false }) {
-                    hasRomanized = true
-                }
-            } else if let text = lead["Text"]?.stringValue {
-                lineText = text
+            } else if !backgroundSyllables.isEmpty {
+                // Background-only line (the real client's IsEmptyLyricsLine
+                // keeps these) — the native screen gets the background text.
+                lineText = "(\(SpicyLyricsRepository.flattenedText(backgroundSyllables)))"
             } else {
                 continue
             }
 
-            if (lead["TransliteratedText"]?.stringValue ?? "").isEmpty == false { hasRomanized = true }
+            let transliterated = (lead?["Syllables"]?.arrayValue ?? []).contains {
+                ($0["TransliteratedText"]?.stringValue ?? "").isEmpty == false
+            }
+            if transliterated || (lead?["TransliteratedText"]?.stringValue ?? "").isEmpty == false {
+                hasRomanized = true
+            }
 
-            let lineStartMs = lead["StartTime"]?.doubleValue.map { Int($0 * 1000) } ?? 0
-            let lineEndMs   = lead["EndTime"]?.doubleValue.map { Int($0 * 1000) }
-                ?? karaokeSyllables.last?.endMs
-                ?? lineStartMs
+            let firstSyllableMs = (karaokeSyllables.first ?? backgroundSyllables.first)?.startMs ?? 0
+            let lastSyllableMs = max(karaokeSyllables.last?.endMs ?? 0, backgroundSyllables.last?.endMs ?? 0)
+            let lineStartMs = lead?["StartTime"]?.doubleValue.map { Int($0 * 1000) } ?? firstSyllableMs
+            let lineEndMs = max(
+                lead?["EndTime"]?.doubleValue.map { Int($0 * 1000) } ?? lineStartMs,
+                lastSyllableMs
+            )
 
             lines.append(LyricsLineDto(content: lineText.lyricsNoteIfEmpty, offsetMs: lineStartMs))
 
-            if !karaokeSyllables.isEmpty {
+            if !karaokeSyllables.isEmpty || !backgroundSyllables.isEmpty {
                 karaokeLines.append(KaraokeLineDto(
                     syllables: karaokeSyllables,
                     startMs: lineStartMs,
-                    endMs: lineEndMs
+                    endMs: lineEndMs,
+                    background: backgroundSyllables,
+                    oppositeAligned: entry["OppositeAligned"]?.boolValue ?? false
                 ))
             }
         }
@@ -372,7 +362,12 @@ class SpicyLyricsRepository: LyricsRepository {
                 query: query,
                 options: options
             )
-            let normalizedKaraokeLines = SpicyLyricsRepository.normalizeMonotonicTiming(filledKaraokeLines)
+            // Interludes are inserted last: LyricsUncensorFill matches
+            // karaoke lines against other providers' lines by index, so the
+            // synthesized dot lines must not exist yet at that point.
+            let normalizedKaraokeLines = SpicyLyricsRepository.insertInterludes(
+                SpicyLyricsRepository.normalizeMonotonicTiming(filledKaraokeLines)
+            )
 
             KaraokeLyricsStore.shared.set(
                 trackId: trackId,
@@ -420,6 +415,88 @@ class SpicyLyricsRepository: LyricsRepository {
                 }
                 previousEndMs = syllable.endMs
                 result[lineIndex].syllables[syllableIndex] = syllable
+            }
+            // Background vocals legitimately overlap the lead, so they're
+            // only clamped against themselves, within the line.
+            var previousBackgroundEndMs = Int.min
+            for syllableIndex in result[lineIndex].background.indices {
+                var syllable = result[lineIndex].background[syllableIndex]
+                syllable.startMs = max(syllable.startMs, previousBackgroundEndMs)
+                syllable.endMs = max(syllable.endMs, syllable.startMs)
+                previousBackgroundEndMs = syllable.endMs
+                result[lineIndex].background[syllableIndex] = syllable
+            }
+        }
+        return result
+    }
+
+    // MARK: Syllable helpers
+
+    private static func karaokeSyllables(from values: [SLObjPackValue]) -> [KaraokeSyllableDto] {
+        values.compactMap { syllable in
+            guard let text = syllable["Text"]?.stringValue, !text.isEmpty else { return nil }
+            let startMs = syllable["StartTime"]?.doubleValue.map { Int($0 * 1000) } ?? 0
+            let endMs   = syllable["EndTime"]?.doubleValue.map { Int($0 * 1000) } ?? startMs
+            return KaraokeSyllableDto(
+                text: text,
+                startMs: startMs,
+                endMs: endMs,
+                isPartOfWord: syllable["IsPartOfWord"]?.boolValue ?? false
+            )
+        }
+    }
+
+    /// Joins syllables into running text. Real client rule (Syllable.ts /
+    /// tools.ts): IsPartOfWord is a FORWARD-looking flag — a syllable with
+    /// IsPartOfWord=true glues onto the *next* one ("Lo" + "la" -> "Lola"),
+    /// so the space before a syllable depends on the *previous* syllable's
+    /// flag. Same rule as KaraokeLineDto.plainText.
+    private static func flattenedText(_ syllables: [KaraokeSyllableDto]) -> String {
+        KaraokeLineDto(syllables: syllables, startMs: 0, endMs: 0).plainText
+    }
+
+    /// Matches getLyricsBetweenShow() in the real extension's lyrics.ts —
+    /// a gap this long (or a first line starting this late) gets a
+    /// "• • •" musical line.
+    private static let interludeThresholdMs = 3000
+    /// Matches getInterludeTimePadding() (preHiddenDotLineMs + 50): the
+    /// dots finish filling this long before the next line starts, so the
+    /// dot line has time to fade out instead of vanishing mid-fill.
+    private static let interludePaddingMs = 550
+
+    private static func insertInterludes(_ lines: [KaraokeLineDto]) -> [KaraokeLineDto] {
+        guard let first = lines.first else { return lines }
+
+        func interlude(from startMs: Int, to endMs: Int, oppositeAligned: Bool) -> KaraokeLineDto {
+            let fillEndMs = max(startMs, endMs - interludePaddingMs)
+            let dotMs = (fillEndMs - startMs) / 3
+            let dots = (0 ..< 3).map { index in
+                KaraokeSyllableDto(
+                    text: "•",
+                    startMs: startMs + dotMs * index,
+                    endMs: index == 2 ? fillEndMs : startMs + dotMs * (index + 1),
+                    isPartOfWord: false
+                )
+            }
+            return KaraokeLineDto(
+                syllables: dots,
+                startMs: startMs,
+                endMs: endMs,
+                oppositeAligned: oppositeAligned,
+                isInterlude: true
+            )
+        }
+
+        var result = [KaraokeLineDto]()
+        if first.startMs >= interludeThresholdMs {
+            result.append(interlude(from: 0, to: first.startMs, oppositeAligned: first.oppositeAligned))
+        }
+        for (index, line) in lines.enumerated() {
+            result.append(line)
+            guard index + 1 < lines.count else { continue }
+            let next = lines[index + 1]
+            if next.startMs - line.endMs >= interludeThresholdMs {
+                result.append(interlude(from: line.endMs, to: next.startMs, oppositeAligned: next.oppositeAligned))
             }
         }
         return result

@@ -24,6 +24,12 @@ struct KaraokeLineView: View {
     /// KaraokeLyricsView.swift's doc comment for why that implicit
     /// approach doesn't actually work for a custom Layout type.
     var availableWidth: CGFloat? = nil
+    /// Resolved per line by KaraokeScrollingLines — duet lines
+    /// (OppositeAligned) sit on the opposite side from the lead.
+    var alignment: KaraokeTextAlignment = UserDefaults.karaokeOptions.textAlignment
+
+    private static let leadFontSize: CGFloat = 28
+    private static let backgroundFontSize: CGFloat = 18
 
     /// Groups syllables into words (consecutive IsPartOfWord runs joined),
     /// since highlight progress is most naturally computed and the text
@@ -45,10 +51,10 @@ struct KaraokeLineView: View {
     /// mirroring each flip the word order once, and two flips put RTL
     /// lines right back in left-to-right order — indistinguishable from
     /// RTL handling not running at all.
-    private var words: [[KaraokeSyllableDto]] {
+    private func words(_ syllables: [KaraokeSyllableDto]) -> [[KaraokeSyllableDto]] {
         var result: [[KaraokeSyllableDto]] = []
         var current: [KaraokeSyllableDto] = []
-        for syllable in line.syllables {
+        for syllable in syllables {
             let previousContinues = current.last?.isPartOfWord ?? false
             if current.isEmpty || previousContinues {
                 current.append(syllable)
@@ -61,16 +67,47 @@ struct KaraokeLineView: View {
         return result
     }
 
+    private var horizontalAlignment: SwiftUI.HorizontalAlignment {
+        SwiftUI.HorizontalAlignment(karaokeTextAlignment: alignment)
+    }
+
+    private func wordRow(_ syllables: [KaraokeSyllableDto], fontSize: CGFloat, spacing: CGFloat) -> some View {
+        KaraokeFlowLayout(spacing: spacing, alignment: horizontalAlignment) {
+            ForEach(Array(words(syllables).enumerated()), id: \.offset) { _, word in
+                KaraokeWordView(syllables: word, currentMs: currentMs, isActiveLine: isActiveLine, fontSize: fontSize)
+            }
+        }
+        .frame(width: availableWidth)
+    }
+
     var body: some View {
-        KaraokeFlowLayout(spacing: 8, alignment: SwiftUI.HorizontalAlignment(karaokeTextAlignment: UserDefaults.karaokeOptions.textAlignment)) {
-            ForEach(Array(words.enumerated()), id: \.offset) { _, word in
-                KaraokeWordView(syllables: word, currentMs: currentMs, isActiveLine: isActiveLine)
+        if line.isInterlude {
+            // Musical "• • •" line — only takes up space while it's the
+            // active line, like the real extension's dot line collapsing
+            // once the next vocal line starts.
+            wordRow(line.syllables, fontSize: Self.leadFontSize, spacing: 10)
+                .frame(height: isActiveLine ? nil : 0, alignment: .top)
+                .clipped()
+                .opacity(isActiveLine ? 1.0 : 0.0)
+                .animation(.easeOut(duration: 0.35), value: isActiveLine)
+        } else {
+            lyricsBody
+        }
+    }
+
+    private var lyricsBody: some View {
+        VStack(alignment: horizontalAlignment, spacing: 6) {
+            if !line.syllables.isEmpty {
+                wordRow(line.syllables, fontSize: Self.leadFontSize, spacing: 8)
+            }
+            if !line.background.isEmpty {
+                wordRow(line.background, fontSize: Self.backgroundFontSize, spacing: 6)
             }
         }
         // A FIXED width (not maxWidth) — this is what actually guarantees
         // KaraokeFlowLayoutImpl's sizeThatFits/placeSubviews both receive
         // this exact, concrete value as their proposal/bounds width, with
-        // no nil/unspecified fallback possible.
+        // no nil/unspecified fallback possible (each wordRow repeats it).
         .frame(width: availableWidth)
         .opacity(isActiveLine ? 1.0 : 0.4)
         .blur(radius: isActiveLine ? 0 : 1.5)
@@ -123,6 +160,7 @@ private struct KaraokeWordView: View {
     let syllables: [KaraokeSyllableDto]
     let currentMs: Int
     let isActiveLine: Bool
+    let fontSize: CGFloat
 
     private var wordStartMs: Int { syllables.first?.startMs ?? 0 }
     private var wordEndMs: Int { syllables.last?.endMs ?? wordStartMs }
@@ -154,16 +192,17 @@ private struct KaraokeWordView: View {
                 KaraokeSyllableTextView(
                     syllable: syllable,
                     currentMs: currentMs,
-                    isActiveLine: isActiveLine
+                    isActiveLine: isActiveLine,
+                    fontSize: fontSize
                 )
             }
         }
         .scaleEffect(scale)
         // yOffsetFraction is expressed as a fraction of font size in the
-        // original (1/100, -1/60 etc applied to em-based units) — 28pt
-        // matches the syllable text's font size below, so multiplying by
-        // it converts the fraction into actual points.
-        .offset(y: CGFloat(yOffsetFraction) * 28)
+        // original (1/100, -1/60 etc applied to em-based units) — scaling
+        // by the syllable text's font size converts the fraction into
+        // actual points.
+        .offset(y: CGFloat(yOffsetFraction) * fontSize)
         .shadow(color: .white.opacity(glow * 0.8), radius: CGFloat(glow * 8))
         .animation(.linear(duration: 1.0 / 30.0), value: wordProgress)
     }
@@ -180,6 +219,7 @@ private struct KaraokeSyllableTextView: View {
     let syllable: KaraokeSyllableDto
     let currentMs: Int
     let isActiveLine: Bool
+    let fontSize: CGFloat
 
     private var progress: Double {
         guard isActiveLine, syllable.endMs > syllable.startMs else {
@@ -191,7 +231,7 @@ private struct KaraokeSyllableTextView: View {
 
     var body: some View {
         Text(syllable.text)
-            .font(.system(size: 28, weight: .bold))
+            .font(.system(size: fontSize, weight: .bold))
             .foregroundStyle(
                 LinearGradient(
                     stops: [
