@@ -171,6 +171,4 @@ func activateKaraokeHooks() {
     if #available(iOS 15.0, *) {
         _ = KaraokeButtonOverlay.shared
     }
-
-    KaraokeMainThreadWatchdog.shared.start()
 }
