@@ -856,6 +856,11 @@ private struct KaraokeButtonOverlayView: View {
             .background(Capsule().fill(Color.white.opacity(0.18)))
             .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 1))
             .shadow(color: .black.opacity(0.3), radius: 8, y: 2)
+            // The whole overlay window is the tap target, not just the
+            // capsule's drawn pixels — near-misses around the edge were
+            // falling through as taps that "didn't register".
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: isPhone ? .center : .trailing)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         // Alignment within the window's own frame mirrors the window's

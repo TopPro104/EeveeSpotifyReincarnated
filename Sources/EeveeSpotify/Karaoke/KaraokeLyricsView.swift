@@ -36,6 +36,10 @@ struct KaraokeLyricsView: View {
     /// button).
     var onDismiss: () -> Void
 
+    /// Spring state for every syllable, letter and dot — lives as long as
+    /// this view does. A class, so stepping it doesn't invalidate the view.
+    @State private var animator = KaraokeAnimator()
+
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .topTrailing) {
@@ -51,7 +55,10 @@ struct KaraokeLyricsView: View {
 
     @available(iOS 15.0, *)
     private func content(screenWidth: CGFloat) -> some View {
-        TimelineView(.periodic(from: .now, by: 1.0 / 30.0)) { _ in
+        // .animation = every display frame (60/120Hz), which the springs
+        // need: they're stepped with the real frame delta, like the
+        // extension's requestAnimationFrame loop.
+        TimelineView(.animation) { timeline in
             // Reading the tracker here, inside the TimelineView's per-tick
             // closure, is what actually drives the animation — TimelineView
             // re-invokes this closure on its schedule, and since this read
@@ -60,12 +67,14 @@ struct KaraokeLyricsView: View {
             // value flows straight into the child views' bodies each tick.
             let currentMs = KaraokePlaybackTracker.shared.currentPositionMs()
             let activeIndex = activeLineIndex(at: currentMs)
+            let _ = animator.beginFrame(at: timeline.date.timeIntervalSinceReferenceDate)
 
             KaraokeScrollingLines(
                 lyrics: lyrics,
                 currentMs: currentMs,
                 activeLineIndex: activeIndex,
-                screenWidth: screenWidth
+                screenWidth: screenWidth,
+                animator: animator
             )
         }
     }
@@ -102,6 +111,7 @@ private struct KaraokeScrollingLines: View {
     let currentMs: Int
     let activeLineIndex: Int?
     let screenWidth: CGFloat
+    let animator: KaraokeAnimator
 
     private let horizontalPadding: CGFloat = 24
     private var options: KaraokeOptions { UserDefaults.karaokeOptions }
@@ -126,6 +136,12 @@ private struct KaraokeScrollingLines: View {
         return leadAlignment == .leading ? .trailing : .leading
     }
 
+    private func state(of index: Int) -> KaraokeElementState {
+        guard let active = activeLineIndex else { return .notSung }
+        if index == active { return .active }
+        return index < active ? .sung : .notSung
+    }
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(showsIndicators: false) {
@@ -135,8 +151,11 @@ private struct KaraokeScrollingLines: View {
                     ForEach(Array(lyrics.lines.enumerated()), id: \.offset) { index, line in
                         KaraokeLineView(
                             line: line,
+                            lineIndex: index,
                             currentMs: currentMs,
-                            isActiveLine: index == activeLineIndex,
+                            lineState: state(of: index),
+                            distanceFromActive: activeLineIndex.map { abs(index - $0) } ?? 0,
+                            animator: animator,
                             availableWidth: max(0, screenWidth - horizontalPadding * 2),
                             alignment: alignment(for: line)
                         )
