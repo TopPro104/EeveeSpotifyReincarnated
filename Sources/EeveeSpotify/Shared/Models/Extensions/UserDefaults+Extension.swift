@@ -4,6 +4,7 @@ extension UserDefaults {
     static var container: UserDefaults = .standard
     
     private static let musixmatchTokenKey = "musixmatchToken"
+    private static let spicyLyricsApiKeyKey = "spicyLyricsApiKey"
     private static let darkPopUpsKey = "darkPopUps"
     private static let patchTypeKey = "patchType"
     private static let trueShuffleEnabledKey = "trueShuffleEnabled"
@@ -22,6 +23,17 @@ extension UserDefaults {
         }
         set (token) {
             container.set(token, forKey: musixmatchTokenKey)
+        }
+    }
+
+    /// Optional Spicy Lyrics developer API client key (sl_pk_…) — overrides
+    /// SpicyLyricsRepository.bundledClientKey, whose rate limit is shared.
+    static var spicyLyricsApiKey: String {
+        get {
+            container.string(forKey: spicyLyricsApiKeyKey) ?? ""
+        }
+        set (key) {
+            container.set(key, forKey: spicyLyricsApiKeyKey)
         }
     }
 

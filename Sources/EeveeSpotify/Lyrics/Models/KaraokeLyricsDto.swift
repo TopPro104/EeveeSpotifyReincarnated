@@ -111,4 +111,28 @@ struct KaraokeLyricsDto {
     /// ApplyLyricsProvider.ts falls back to a server-supplied display name
     /// for external sources rather than a fixed ProviderMap entry.
     var providerDisplayName: String?
+    /// Community-sync credits (developer API `UploadAttribution`), which
+    /// its terms require showing and linking next to the lyrics.
+    var uploader: KaraokeCreditDto? = nil
+    var maker: KaraokeCreditDto? = nil
+}
+
+struct KaraokeCreditDto {
+    var name: String
+    var url: URL?
+
+    static let providerNames: [String: String] = [
+        "spicy_lyrics": "Spicy Lyrics",
+        "spl": "Spicy Lyrics",
+        "apple_music": "Apple Music",
+        "aml": "Apple Music",
+        "spotify": "Spotify",
+        "spt": "Spotify",
+    ]
+
+    static func providerLabel(code: String?, displayName: String?) -> String? {
+        guard let code = code else { return nil }
+        if code == "ext" { return displayName ?? "External Source" }
+        return providerNames[code] ?? code
+    }
 }

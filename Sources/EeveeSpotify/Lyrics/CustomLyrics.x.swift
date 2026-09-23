@@ -186,7 +186,7 @@ private func loadCustomLyricsForTrackId(_ trackId: String) throws -> Lyrics {
     lyricsState.loadedSuccessfully = true
 
     let lyrics = Lyrics.with {
-        $0.data = lyricsDto.toSpotifyLyricsData(source: source.description)
+        $0.data = lyricsDto.toSpotifyLyricsData(source: lyricsDto.providerName ?? source.description)
     }
     
     return lyrics

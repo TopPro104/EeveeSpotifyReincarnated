@@ -5,6 +5,9 @@ struct LyricsDto {
     var timeSynced: Bool
     var romanization: LyricsRomanizationStatus
     var translation: LyricsTranslationDto?
+    /// Overrides the "provided by" label on Spotify's lyrics screen, for
+    /// sources whose terms require naming the real provider and credits.
+    var providerName: String? = nil
     
     func toSpotifyLyricsData(source: String) -> LyricsData {
         var lyricsData = LyricsData.with {

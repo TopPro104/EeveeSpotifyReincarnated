@@ -42,6 +42,8 @@ struct KaraokeLyricsView: View {
                 KaraokeBackgroundView()
                 content(screenWidth: geo.size.width)
                 closeButton
+                KaraokeAttributionView(lyrics: lyrics)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
         }
         .preferredColorScheme(.dark)
