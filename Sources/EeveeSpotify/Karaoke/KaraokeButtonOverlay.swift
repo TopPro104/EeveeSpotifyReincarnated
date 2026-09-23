@@ -859,7 +859,7 @@ final class KaraokeButtonOverlay {
 /// tolerates the finger drifting while pressed.
 private final class KaraokeButtonViewController: UIViewController {
     let button = UIButton(type: .custom)
-    private let capsule = UIView()
+    private let capsule = CapsuleView()
     private let label = UILabel()
     private let icon = UIImageView()
 
@@ -915,11 +915,6 @@ private final class KaraokeButtonViewController: UIViewController {
         ])
     }
 
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        capsule.layer.cornerRadius = capsule.bounds.height / 2
-    }
-
     @objc private func tapped() {
         KaraokeOverlayPresenter.present()
     }
@@ -930,5 +925,15 @@ private final class KaraokeButtonViewController: UIViewController {
 
     @objc private func released() {
         UIView.animate(withDuration: 0.15) { self.capsule.alpha = 1 }
+    }
+}
+
+/// Rounds itself from its own layout pass — the view controller's
+/// viewDidLayoutSubviews ran before the button laid the capsule out, so
+/// the radius was computed from a zero height (a plain rectangle).
+private final class CapsuleView: UIView {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.cornerRadius = bounds.height / 2
     }
 }

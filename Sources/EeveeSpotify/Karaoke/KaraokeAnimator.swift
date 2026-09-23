@@ -254,6 +254,14 @@ final class KaraokeAnimator {
     }
 
     private var springs: [String: Springs] = [:]
+
+    init() {
+        writeDebugLog("[Karaoke] animator created")
+    }
+
+    deinit {
+        writeDebugLog("[Karaoke] animator released (overlay torn down)")
+    }
     private var lastTime: TimeInterval?
     private var dt = 1.0 / 60
     private(set) var frame = 0
