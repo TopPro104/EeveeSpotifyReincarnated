@@ -176,6 +176,11 @@ jobs:
           if [ -d "Payload/Spotify.app/Watch" ]; then
             rm -rf Payload/Spotify.app/Watch
           fi
+          # UIDesignRequiresCompatibility opts the whole app out of the
+          # iOS 26+ Liquid Glass design. Log where it came from, then drop it.
+          echo "source IPA: UIDesignRequiresCompatibility=$(unzip -p ${{ github.workspace }}/spotify.ipa Payload/Spotify.app/Info.plist | plutil -extract UIDesignRequiresCompatibility raw - 2>/dev/null || echo absent)"
+          echo "built IPA:  UIDesignRequiresCompatibility=$(plutil -extract UIDesignRequiresCompatibility raw Payload/Spotify.app/Info.plist 2>/dev/null || echo absent)"
+          plutil -remove UIDesignRequiresCompatibility Payload/Spotify.app/Info.plist 2>/dev/null || true
           rm -f "$(basename "$OUT_IPA")"
           zip -qry "$(basename "$OUT_IPA")" Payload
           rm -rf Payload
