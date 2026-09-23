@@ -54,12 +54,6 @@ internal-stage::
 		-o $(THEOS_OBJ_DIR)/KaraokeBackgroundShader.air
 	xcrun -sdk iphoneos metallib $(THEOS_OBJ_DIR)/KaraokeBackgroundShader.air \
 		-o $(THEOS_STAGING_DIR)/Library/MobileSubstrate/DynamicLibraries/KaraokeBackgroundShader.metallib
-	# Also inside EeveeSpotify.bundle: IPA builds inject only the dylib,
-	# the frameworks and that bundle, so the path above never exists in a
-	# sideloaded app and the karaoke background fell back to a placeholder.
-	mkdir -p "$(THEOS_STAGING_DIR)/Library/Application Support/EeveeSpotify.bundle"
-	cp $(THEOS_STAGING_DIR)/Library/MobileSubstrate/DynamicLibraries/KaraokeBackgroundShader.metallib \
-		"$(THEOS_STAGING_DIR)/Library/Application Support/EeveeSpotify.bundle/"
 
 # Build EeveeSwiftProtobuf.framework from apple/swift-protobuf source. Run
 # this once before `make package`. Re-run if SWIFTPROTOBUF_VERSION changes
