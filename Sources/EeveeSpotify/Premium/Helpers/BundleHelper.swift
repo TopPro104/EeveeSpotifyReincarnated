@@ -40,6 +40,10 @@ class BundleHelper {
         }
     }
     
+    func path(forResource name: String, ofType type: String) -> String? {
+        bundle?.path(forResource: name, ofType: type)
+    }
+
     func uiImage(_ name: String) -> UIImage? {
         guard let bundle = self.bundle else { return nil }
         

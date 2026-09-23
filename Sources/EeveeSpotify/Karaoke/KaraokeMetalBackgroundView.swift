@@ -1,5 +1,6 @@
 import SwiftUI
 import MetalKit
+import EeveeSpotifyC
 
 /// Renders the album-art domain-warp background using the Metal shader in
 /// KaraokeBackgroundShader.metal — the native equivalent of the real
@@ -33,7 +34,15 @@ final class KaraokeBackgroundRenderer: NSObject, MTKViewDelegate {
         // (no Theos/Metal toolchain available), so if this path doesn't
         // exist or doesn't load, check the Makefile's internal-stage
         // Metal compile step first.
-        let metallibPath = "/Library/MobileSubstrate/DynamicLibraries/KaraokeBackgroundShader.metallib"
+        // IPA builds only carry EeveeSpotify.bundle; jailbreak packages
+        // also stage it next to the dylib (rootful or rootless prefix).
+        let metallibPath = [
+            BundleHelper.shared.path(forResource: "KaraokeBackgroundShader", ofType: "metallib"),
+            EeveeJBRootPath("/Library/MobileSubstrate/DynamicLibraries/KaraokeBackgroundShader.metallib"),
+        ]
+            .compactMap { $0 }
+            .first { FileManager.default.fileExists(atPath: $0) }
+            ?? "/Library/MobileSubstrate/DynamicLibraries/KaraokeBackgroundShader.metallib"
         guard let library = try? device.makeLibrary(filepath: metallibPath),
               let vertexFn = library.makeFunction(name: "karaoke_bg_vertex"),
               let fragmentFn = library.makeFunction(name: "karaoke_bg_fragment") else {
