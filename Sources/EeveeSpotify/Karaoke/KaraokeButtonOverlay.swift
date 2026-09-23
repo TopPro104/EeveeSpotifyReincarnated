@@ -714,7 +714,7 @@ final class KaraokeButtonOverlay {
         // this just shrinks the window to match, so there isn't dead
         // tappable space left around a now-smaller button.
         let areaWidth: CGFloat = isPhone ? 180 : 152
-        let areaHeight: CGFloat = isPhone ? 56 : 46
+        let areaHeight: CGFloat = isPhone ? 44 : 46
         // Lower on iPhone specifically — iPhone's Now Playing layout puts
         // the action row closer to the bottom of the screen than iPad's
         // does (iPad has more vertical space above the mini-player/controls
@@ -722,7 +722,7 @@ final class KaraokeButtonOverlay {
         // on iPhone. This is still a fixed guess, not a true anchor — see
         // the comment below on why I couldn't verify the real button's
         // frame — so let me know if it needs further adjustment.
-        let bottomInset: CGFloat = isPhone ? 52 : 100
+        let bottomInset: CGFloat = isPhone ? 0 : 100
         let trailingInset: CGFloat = 8
 
         // Best-effort placement near where Spotify's own action row (share/
