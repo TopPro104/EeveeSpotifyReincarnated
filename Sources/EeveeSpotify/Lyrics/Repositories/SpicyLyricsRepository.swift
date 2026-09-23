@@ -206,6 +206,75 @@ class SpicyLyricsRepository: LyricsRepository {
         return data
     }
 
+    // MARK: - Fidelity cache
+    //
+    // The API doesn't return the same thing for a track every time: the same
+    // track id comes back as Syllable, then Line, then Static hours later
+    // (seen in debug logs — e.g. one track Syllable on two days, Static on two
+    // others, identical request each time). The real client never notices,
+    // because it keeps every successful response in its LyricsStore cache and
+    // serves that before asking the API again (fetchLyrics.ts). Without a
+    // cache here, every play gambled on whatever the server felt like
+    // returning, which is what showed up as "lyrics not synced yet" for
+    // tracks that are word-synced in the desktop extension.
+    //
+    // So: remember the best response per track on disk, serve a cached
+    // Syllable response straight away, and never let a fresh response
+    // downgrade a better cached one.
+
+    private static let syllableFidelity = 3
+
+    private func bestAvailableData(trackId: String) throws -> Data {
+        let cached = SpicyLyricsCache.load(trackId: trackId)
+        let cachedFidelity = cached.map(SpicyLyricsRepository.fidelity(of:)) ?? 0
+
+        if let cached = cached, cachedFidelity == SpicyLyricsRepository.syllableFidelity {
+            writeDebugLog("[SpicyLyrics] Serving cached Syllable response for \(trackId)")
+            return cached
+        }
+
+        let fresh: Data
+        do {
+            fresh = try performQuery(trackId: trackId)
+        } catch {
+            if let cached = cached, cachedFidelity > 0 {
+                writeDebugLog("[SpicyLyrics] Query failed for \(trackId) (\(error)) — serving cached response")
+                return cached
+            }
+            throw error
+        }
+
+        let freshFidelity = SpicyLyricsRepository.fidelity(of: fresh)
+        if let cached = cached, cachedFidelity > freshFidelity {
+            writeDebugLog("[SpicyLyrics] Server downgraded \(trackId) (fidelity \(freshFidelity) < cached \(cachedFidelity)) — serving cached response")
+            return cached
+        }
+        if freshFidelity > 0 {
+            SpicyLyricsCache.save(fresh, trackId: trackId)
+        }
+        return fresh
+    }
+
+    /// Syllable 3, Line 2, Static 1; 0 for anything that isn't a usable 200.
+    private static func fidelity(of data: Data) -> Int {
+        guard
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let queriesRaw = json["queries"] as? [[String: Any]],
+            let matchedQuery = queriesRaw.first(where: { $0["operationId"] as? String == "0" }),
+            let result = matchedQuery["result"] as? [String: Any],
+            result["httpStatus"] as? Int == 200,
+            let rawData = result["data"],
+            let type = (try? SLObjPack.unpack(rawData))?["Type"]?.stringValue
+        else { return 0 }
+
+        switch type {
+        case "Syllable": return syllableFidelity
+        case "Line":     return 2
+        case "Static":   return 1
+        default:         return 0
+        }
+    }
+
     // MARK: - Parse
 
     private func parseLyricsData(_ data: Data, trackId: String, query: LyricsSearchQuery, options: LyricsOptions) throws -> LyricsDto {
@@ -549,7 +618,7 @@ class SpicyLyricsRepository: LyricsRepository {
             writeDebugLog("[SpicyLyrics] Empty track ID")
             throw LyricsError.noSuchSong
         }
-        let data = try performQuery(trackId: trackId)
+        let data = try bestAvailableData(trackId: trackId)
         var dto = try parseLyricsData(data, trackId: trackId, query: query, options: options)
 
         let filledContents = LyricsUncensorFill.fill(
@@ -561,5 +630,66 @@ class SpicyLyricsRepository: LyricsRepository {
             dto.lines[index].content = content
         }
         return dto
+    }
+}
+
+// MARK: - SpicyLyricsCache
+
+/// On-disk store of the best SpicyLyrics API response seen per track — the
+/// iOS counterpart of the real extension's LyricsStore. Raw response bytes are
+/// kept as-is so a cache hit goes through exactly the same parse path as a
+/// fresh response. Lives in Caches, so iOS may purge it under storage
+/// pressure; that only costs a refetch.
+enum SpicyLyricsCache {
+    private static let maxEntries = 1000
+
+    private static let directory: URL? = {
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let url = caches.appendingPathComponent("EeveeSpicyLyrics", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }()
+
+    private static func fileURL(trackId: String) -> URL? {
+        // Spotify track ids are base62; anything else is not a cache key.
+        guard !trackId.isEmpty, trackId.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else {
+            return nil
+        }
+        return directory?.appendingPathComponent("\(trackId).json")
+    }
+
+    static func load(trackId: String) -> Data? {
+        guard let url = fileURL(trackId: trackId) else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
+    static func save(_ data: Data, trackId: String) {
+        guard let url = fileURL(trackId: trackId) else { return }
+        try? data.write(to: url, options: .atomic)
+        pruneIfNeeded()
+    }
+
+    /// Drops the least recently written entries once the cache grows past
+    /// maxEntries, so it can't grow without bound.
+    private static func pruneIfNeeded() {
+        guard
+            let directory = directory,
+            let files = try? FileManager.default.contentsOfDirectory(
+                at: directory,
+                includingPropertiesForKeys: [.contentModificationDateKey]
+            ),
+            files.count > maxEntries
+        else { return }
+
+        let sorted = files.sorted {
+            let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return a < b
+        }
+        for file in sorted.prefix(files.count - maxEntries) {
+            try? FileManager.default.removeItem(at: file)
+        }
     }
 }
