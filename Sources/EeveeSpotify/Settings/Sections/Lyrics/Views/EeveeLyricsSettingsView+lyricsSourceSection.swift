@@ -54,6 +54,8 @@ extension EeveeLyricsSettingsView {
 
                 if viewModel.lyricsSource == .spicylyrics {
                     spicyLyricsApiKeyField()
+                    
+                    Toggle("Word-by-word in Spotify lyrics (experimental)", isOn: $viewModel.nativeRichSync)
                 }
             }
         }

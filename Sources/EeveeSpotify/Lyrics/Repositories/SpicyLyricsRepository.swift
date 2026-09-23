@@ -482,7 +482,12 @@ class SpicyLyricsRepository: LyricsRepository {
                 lastSyllableMs
             )
 
-            lines.append(LyricsLineDto(content: lineText.lyricsNoteIfEmpty, offsetMs: lineStartMs))
+            lines.append(LyricsLineDto(
+                content: lineText.lyricsNoteIfEmpty,
+                offsetMs: lineStartMs,
+                syllables: karaokeSyllables.isEmpty ? nil : karaokeSyllables,
+                endMs: lineEndMs
+            ))
 
             if !karaokeSyllables.isEmpty || !backgroundSyllables.isEmpty {
                 karaokeLines.append(KaraokeLineDto(
